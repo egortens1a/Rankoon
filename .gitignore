@@ -2,5 +2,7 @@
 __pycache__/
 .ipynb_checkpoints/
 .pytest_cache/
-data/
+data/raw/
+data/processed/
+data/annotations/candidate_pairs.tsv
 artifacts/
