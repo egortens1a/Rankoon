@@ -3,6 +3,24 @@ from pathlib import Path
 import polars as pl
 
 
+def load_annotated_duplications(annotations_path: Path) -> pl.DataFrame:
+    annotations = pl.read_csv(annotations_path)
+    pair_columns = ("query_id_a", "query_id_b")
+    required = (*pair_columns, "is_duplicate")
+    missing = [column for column in required if column not in annotations.columns]
+    if missing:
+        raise ValueError(f"{annotations_path}: missing required columns: {', '.join(missing)}")
+
+    for column in required:
+        if annotations.get_column(column).has_nulls():
+            raise ValueError(f"{column} has nulls from {annotations_path}")
+
+    flags = annotations.get_column("is_duplicate")
+    if any(isinstance(flag, bool) or flag not in (0, 1) for flag in flags.unique()):
+        raise ValueError(f"{annotations_path}: is_duplicate must contain only 0 and 1")
+    return annotations.filter(flags == 1).select(*pair_columns)
+
+
 def load_wands(
     data_dir: Path,
 ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:

@@ -5,10 +5,11 @@ from uuid import uuid4
 import polars as pl
 import pytest
 
-from rankoon.data.loader import load_wands
+from rankoon.data.loader import load_annotated_duplications, load_wands
 
 
 WANDS_DIR = Path("wands")
+ANNOTATIONS_PATH = Path("candidate_pairs.csv")
 
 
 @pytest.fixture
@@ -17,6 +18,10 @@ def wands_files(monkeypatch: pytest.MonkeyPatch) -> dict[Path, str]:
         WANDS_DIR / "product.csv": "product_id\tproduct_name\tproduct_description\n100\tChair\t\n",
         WANDS_DIR / "label.csv": "id\tquery_id\tproduct_id\tlabel\n10\t1\t100\tExact\n11\t1\t100\tPartial\n",
         WANDS_DIR / "query.csv": "query_id\tquery\n1\tchair\n",
+        ANNOTATIONS_PATH: (
+            "query_id_a,query_id_b,is_duplicate,reason\n"
+            "10,20,1,confirmed\n20,30,0,different\n"
+        ),
     }
     read_csv = pl.read_csv
 
@@ -95,3 +100,55 @@ def test_load_wands_rejects_invalid_tables(
         load_wands(WANDS_DIR)
 
     assert f"{filename}: {message}" in str(error.value)
+
+
+def test_load_annotated_duplications_keeps_confirmed_pairs(
+    wands_files: dict[Path, str],
+) -> None:
+    result = load_annotated_duplications(ANNOTATIONS_PATH)
+
+    assert result.columns == ["query_id_a", "query_id_b"]
+    assert result.rows() == [(10, 20)]
+
+
+@pytest.mark.parametrize("column", ["query_id_a", "query_id_b", "is_duplicate"])
+def test_load_annotated_duplications_requires_columns(
+    wands_files: dict[Path, str], column: str
+) -> None:
+    table = pl.DataFrame({"query_id_a": [10], "query_id_b": [20], "is_duplicate": [1]})
+    wands_files[ANNOTATIONS_PATH] = table.drop(column).write_csv()
+
+    with pytest.raises(ValueError, match=column):
+        load_annotated_duplications(ANNOTATIONS_PATH)
+
+
+@pytest.mark.parametrize("column", ["query_id_a", "query_id_b", "is_duplicate"])
+def test_load_annotated_duplications_rejects_nulls(
+    wands_files: dict[Path, str], column: str
+) -> None:
+    table = pl.DataFrame({"query_id_a": [10], "query_id_b": [20], "is_duplicate": [1]})
+    wands_files[ANNOTATIONS_PATH] = table.with_columns(pl.lit(None).alias(column)).write_csv()
+
+    with pytest.raises(ValueError, match=column):
+        load_annotated_duplications(ANNOTATIONS_PATH)
+
+
+@pytest.mark.parametrize("flag", ["-1", "unknown", "true"])
+def test_load_annotated_duplications_rejects_invalid_flags(
+    wands_files: dict[Path, str], flag: str
+) -> None:
+    wands_files[ANNOTATIONS_PATH] = f"query_id_a,query_id_b,is_duplicate\n10,20,{flag}\n"
+
+    with pytest.raises(ValueError, match="is_duplicate must contain only 0 and 1"):
+        load_annotated_duplications(ANNOTATIONS_PATH)
+
+
+def test_load_annotated_duplications_accepts_empty_annotations(
+    wands_files: dict[Path, str],
+) -> None:
+    wands_files[ANNOTATIONS_PATH] = "query_id_a,query_id_b,is_duplicate\n"
+
+    result = load_annotated_duplications(ANNOTATIONS_PATH)
+
+    assert result.columns == ["query_id_a", "query_id_b"]
+    assert result.is_empty()

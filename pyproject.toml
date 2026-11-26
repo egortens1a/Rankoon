@@ -13,6 +13,8 @@ dependencies = [
     "numpy>=2.5.5",
     "polars>=2.2.0",
     "pyarrow>=26.0.1",
+    "pydantic>=2.14.4",
+    "pydantic-settings>=2.16.3",
 ]
 
 [dependency-groups]
@@ -26,3 +28,6 @@ dev = [
     "sentence-transformers>=6.3.0",
     "tqdm>=4.70.1",
 ]
+
+[tool.pytest.ini_options]
+addopts = ["--ignore=artifacts"]
